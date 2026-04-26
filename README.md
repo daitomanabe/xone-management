@@ -39,10 +39,15 @@ window shows:
 - Last Ableton beat packet received through `/xone/beat`
 - Last low/mid/high level values
 
+The app is the control point for everything except the Max for Live device
+inside Ableton Live. Start/Stop/Quit from the app manages the native bridge
+process, OSC listener, MIDI connection, and K2 LED cleanup.
+
 The menu provides:
 
-- Start Bridge
-- Stop Bridge
+- Start All
+- Stop All
+- Restart Bridge
 - All LEDs Off
 - Quit
 

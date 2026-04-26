@@ -45,6 +45,7 @@ struct Options {
     var beatMs = 170
     var thresholds = defaultThresholds
     var logMidi = false
+    var parentPID: pid_t?
     var help = false
     var positionals: [String] = []
 }
@@ -200,6 +201,8 @@ func parseArgs(_ argv: [String]) throws -> Options {
             options.thresholds = thresholds
         case "log-midi":
             options.logMidi = inline.map { $0 != "false" } ?? true
+        case "parent-pid":
+            options.parentPID = pid_t(Int32(Int(try takeValue(token, inline)) ?? 0))
         case "help":
             options.help = true
         default:
@@ -700,12 +703,28 @@ func runStart(_ options: Options) throws {
     sigint.resume()
     sigterm.resume()
 
+    let parentWatchdog: DispatchSourceTimer?
+    if let parentPID = options.parentPID, parentPID > 0 {
+        let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        watchdog.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1))
+        watchdog.setEventHandler {
+            if kill(parentPID, 0) != 0 && errno == ESRCH {
+                shutdown()
+            }
+        }
+        watchdog.resume()
+        parentWatchdog = watchdog
+    } else {
+        parentWatchdog = nil
+    }
+
     k2.allOff()
     server?.start()
     print("Opened MIDI output \(k2.port.index): \(k2.port.name) on channel \(k2.channel)")
     print("Listening for OSC on \(options.host):\(options.oscPort)")
     print("Press Ctrl-C to turn LEDs off and quit.")
     bridgeEvent("ready midi=\"\(k2.port.name)\" channel=\(k2.channel) host=\(options.host) port=\(options.oscPort)")
+    _ = parentWatchdog
     dispatchMain()
 }
 

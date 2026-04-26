@@ -1,5 +1,6 @@
 import AppKit
 import CoreMIDI
+import Darwin
 import Foundation
 
 final class DotView: NSView {
@@ -87,8 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        stopBridge(nil)
-        runBridgeCommand(["all-off"])
+        stopManagedBridge(sendAllOff: true, wait: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -106,8 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(title)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Show Status", action: #selector(showWindow(_:)), keyEquivalent: "w"))
-        menu.addItem(NSMenuItem(title: "Start Bridge", action: #selector(startBridge(_:)), keyEquivalent: "s"))
-        menu.addItem(NSMenuItem(title: "Stop Bridge", action: #selector(stopBridge(_:)), keyEquivalent: "x"))
+        menu.addItem(NSMenuItem(title: "Start All", action: #selector(startBridge(_:)), keyEquivalent: "s"))
+        menu.addItem(NSMenuItem(title: "Stop All", action: #selector(stopBridge(_:)), keyEquivalent: "x"))
+        menu.addItem(NSMenuItem(title: "Restart Bridge", action: #selector(restartBridge(_:)), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "All LEDs Off", action: #selector(allOff(_:)), keyEquivalent: "o"))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit(_:)), keyEquivalent: "q"))
@@ -148,8 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let buttonRow = NSStackView()
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 8
-        buttonRow.addArrangedSubview(button(title: "Start", action: #selector(startBridge(_:))))
-        buttonRow.addArrangedSubview(button(title: "Stop", action: #selector(stopBridge(_:))))
+        buttonRow.addArrangedSubview(button(title: "Start All", action: #selector(startBridge(_:))))
+        buttonRow.addArrangedSubview(button(title: "Stop All", action: #selector(stopBridge(_:))))
+        buttonRow.addArrangedSubview(button(title: "Restart", action: #selector(restartBridge(_:))))
         buttonRow.addArrangedSubview(button(title: "All LEDs Off", action: #selector(allOff(_:))))
 
         logView.isEditable = false
@@ -235,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let process = Process()
         process.executableURL = resolvedBridgeExecutableURL()
-        process.arguments = ["start"]
+        process.arguments = ["start", "--parent-pid", "\(ProcessInfo.processInfo.processIdentifier)"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -271,13 +273,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func stopBridge(_ sender: Any?) {
+        stopManagedBridge(sendAllOff: true, wait: false)
+    }
+
+    @objc private func restartBridge(_ sender: Any?) {
+        appendLog("Restart requested")
+        stopManagedBridge(sendAllOff: true, wait: true)
+        startBridge(nil)
+    }
+
+    private func stopManagedBridge(sendAllOff: Bool, wait: Bool) {
+        if sendAllOff {
+            runBridgeCommand(["all-off"], wait: wait)
+        }
+
         guard let process = bridgeProcess else {
             updateStatusTitle(running: false)
             updateUI()
             return
         }
+
+        let pid = process.processIdentifier
         if process.isRunning {
+            appendLog("Bridge stop requested")
             process.terminate()
+            if wait {
+                let deadline = Date().addingTimeInterval(2.0)
+                while process.isRunning && Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                if process.isRunning {
+                    kill(pid, SIGKILL)
+                    process.waitUntilExit()
+                    appendLog("Bridge force-stopped after timeout")
+                }
+            }
         }
         bridgeProcess = nil
         updateStatusTitle(running: false)
@@ -285,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func allOff(_ sender: Any?) {
-        runBridgeCommand(["all-off"])
+        runBridgeCommand(["all-off"], wait: false)
         appendLog("All LEDs Off requested")
     }
 
@@ -293,15 +323,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 
-    private func runBridgeCommand(_ arguments: [String]) {
+    @discardableResult
+    private func runBridgeCommand(_ arguments: [String], wait: Bool) -> Int32? {
         let process = Process()
         process.executableURL = resolvedBridgeExecutableURL()
         process.arguments = arguments
         do {
             try process.run()
+            if wait {
+                process.waitUntilExit()
+                return process.terminationStatus
+            }
         } catch {
             appendLog("Failed to run bridge command \(arguments.joined(separator: " ")): \(error)")
         }
+        return nil
     }
 
     private func consumeBridgeOutput(_ text: String) {
