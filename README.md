@@ -30,7 +30,16 @@ To use the Finder app instead of the terminal, open:
 apps/Xone K2 OSC LED Bridge.app
 ```
 
-The app appears in the menu bar as `K2 On` and provides:
+The app opens a compact status window and also appears in the menu bar. The
+window shows:
+
+- Bridge process state
+- Whether the `XONE:K2` MIDI output is visible
+- Last OSC packet received on `127.0.0.1:9123`
+- Last Ableton beat packet received through `/xone/beat`
+- Last low/mid/high level values
+
+The menu provides:
 
 - Start Bridge
 - Stop Bridge

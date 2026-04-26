@@ -539,6 +539,26 @@ func handle(_ message: OSCMessage, renderer: Renderer, k2: K2Controller) {
     }
 }
 
+func bridgeEvent(_ text: String) {
+    if let data = "EVENT \(text)\n".data(using: .utf8) {
+        FileHandle.standardOutput.write(data)
+    }
+}
+
+func emitOSCEvent(_ message: OSCMessage) {
+    bridgeEvent("osc address=\(message.address)")
+
+    if message.address == "/xone/beat" || message.address == "/live/beat" {
+        let value = message.args.first?.number ?? 1
+        bridgeEvent("beat value=\(value)")
+    } else if message.address == "/xone/levels" || message.address == "/live/levels" {
+        let low = message.args.indices.contains(0) ? (message.args[0].number ?? 0) : 0
+        let mid = message.args.indices.contains(1) ? (message.args[1].number ?? 0) : 0
+        let high = message.args.indices.contains(2) ? (message.args[2].number ?? 0) : 0
+        bridgeEvent(String(format: "levels low=%.3f mid=%.3f high=%.3f", low, mid, high))
+    }
+}
+
 final class UDPServer {
     private let socketFd: Int32
     private let source: DispatchSourceRead
@@ -657,6 +677,7 @@ func runStart(_ options: Options) throws {
 
     server = try UDPServer(host: options.host, port: options.oscPort) { data in
         guard let message = parseOSCMessage(data) else { return }
+        emitOSCEvent(message)
         lock.lock()
         handle(message, renderer: renderer, k2: k2)
         lock.unlock()
@@ -684,6 +705,7 @@ func runStart(_ options: Options) throws {
     print("Opened MIDI output \(k2.port.index): \(k2.port.name) on channel \(k2.channel)")
     print("Listening for OSC on \(options.host):\(options.oscPort)")
     print("Press Ctrl-C to turn LEDs off and quit.")
+    bridgeEvent("ready midi=\"\(k2.port.name)\" channel=\(k2.channel) host=\(options.host) port=\(options.oscPort)")
     dispatchMain()
 }
 
