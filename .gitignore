@@ -1,0 +1,8 @@
+node_modules/
+unused-js/
+.DS_Store
+*.log
+.build/
+.swiftpm/
+DerivedData/
+*.dSYM/
