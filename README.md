@@ -51,6 +51,8 @@ The menu provides:
 - All LEDs Off
 - Quit
 
+Closing the main window also quits the app and shuts down the managed bridge.
+
 ## Commands
 
 ```bash

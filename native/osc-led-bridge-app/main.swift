@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        terminateSiblingInstances()
         configureStatusItem()
         configureWindow()
         startTimers()
@@ -92,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
+        true
     }
 
     private func configureStatusItem() {
@@ -153,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         buttonRow.addArrangedSubview(button(title: "Stop All", action: #selector(stopBridge(_:))))
         buttonRow.addArrangedSubview(button(title: "Restart", action: #selector(restartBridge(_:))))
         buttonRow.addArrangedSubview(button(title: "All LEDs Off", action: #selector(allOff(_:))))
+        buttonRow.addArrangedSubview(button(title: "Quit", action: #selector(quit(_:))))
 
         logView.isEditable = false
         logView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -320,7 +322,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func quit(_ sender: Any?) {
+        appendLog("Quit requested")
+        terminateSiblingInstances()
         NSApp.terminate(nil)
+    }
+
+    private func terminateSiblingInstances() {
+        guard let bundleID = Bundle.main.bundleIdentifier else {
+            return
+        }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let siblings = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != currentPID }
+
+        for app in siblings {
+            if !app.terminate() {
+                kill(app.processIdentifier, SIGKILL)
+            }
+        }
     }
 
     @discardableResult
